@@ -22,23 +22,25 @@ class RDSDatabaseConnector:
         engine.execution_options(isolation_level='AUTOCOMMIT').connect()
         return engine
 
-def get_loan_payments_df():
-    cred_dict = read_crednetials()
-    test = RDSDatabaseConnector(cred_dict)
-    engine = test.SQLAlchemy_engine()
-    loan_payments_df = pd.read_sql_table('loan_payments', engine)
-    return loan_payments_df
+    def get_loan_payments_df(self):
+        engine = self.SQLAlchemy_engine()
+        loan_payments_df = pd.read_sql_table('loan_payments', engine)
+        return loan_payments_df
 
 def create_csv_file(df):
     df.to_csv('local_csv_file.csv')
 
-df = get_loan_payments_df()
+# test code
+# cred_dict = read_crednetials()
+# test = RDSDatabaseConnector(cred_dict)
+# df = test.get_loan_payments_df()
+# print(df)
+# df = get_loan_payments_df()
 # df_size = df.size
 # df_shape = df.shape
 # print(f'Information on df')
 # print(f'Size: {df_size}')
 # print(f'Shape: {df_shape}')
 # df_info = df.info()
-print(df.columns)
-
+# print(df.columns)
 # create_csv_file(get_loan_payments_df())
