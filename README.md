@@ -31,4 +31,4 @@ These are the steps made in completing the project.
     - wrote the \_\_init\_\_ method of the RDSDatabaseConnector class
     - wrote the SQLAlchemy_engine method of the RDSDatabaseConnector class which initialises a SQLAlchemy engine from the credentials provided to the class
     - wrote the get_loan_payments_df method which extracts data from the RDS database and returns it as a Pandas DataFrame
-    - defined create_csv_file(df) function to save the data in .csv format, since we're dealing with tabular data
+    - defined create_csv_file(df) function to save the data in .csv format, since we're dealing with tabular data (creating the local_csv_file.csv)
