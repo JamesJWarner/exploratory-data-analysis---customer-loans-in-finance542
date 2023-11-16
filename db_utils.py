@@ -1,6 +1,6 @@
-import yaml
 from sqlalchemy import create_engine
 import pandas as pd
+import yaml
 
 def read_crednetials():
     with open('credentials.yaml','r') as f:
