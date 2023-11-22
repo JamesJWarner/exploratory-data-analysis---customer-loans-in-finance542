@@ -3,9 +3,9 @@ from matplotlib import pyplot as plt
 from scipy import stats
 from sqlalchemy import create_engine
 from statsmodels.graphics.gofplots import qqplot
-import pandas as pd
 import missingno as msno
 import numpy as np
+import pandas as pd
 import yaml
 
 def read_crednetials():
@@ -108,7 +108,7 @@ class Plotter:
     def col_skew(self, column_name):
         try:
             column_name_skew = column_name+"_skew"
-            # df[column_name_skew].hist(bins=50)
+            df[column_name_skew].hist(bins=50)
             print(f"Skew of {column_name} column is {df[column_name_skew].skew(numeric_only=True)}")
         except:
             df[column_name].hist(bins=50)
@@ -118,6 +118,19 @@ class Plotter:
     def qq_plot(self, column_name):
         qq_plot = qqplot(df[column_name] , scale=1 ,line='q', fit=True)
         plt.show()
+
+    def iqr_visual(self, outlier_values):
+        for column, values in outlier_values.items():
+            plt.figure(figsize=(8, 6)) 
+            plt.scatter(df.index, df[column], label='Data points', alpha=0.3) 
+            if values:  # Check if there are outliers for this column
+                plt.scatter(df.index[df[column].isin(values)], df[column][df[column].isin(values)],
+                        color='red', label='Outliers')
+            plt.xlabel('Index')  
+            plt.ylabel(column)   
+            plt.title(f"{column} Data with Outliers Highlighted")  
+            plt.legend() 
+            plt.show()
 
 class DataFrameTransform:
     def __init__(self, df):
@@ -168,6 +181,88 @@ class DataFrameTransform:
                 column_name = str(col)+"_skew"
                 df[column_name] = skew_yeojohnson(col)
                 # print(f"Skew of {col} column is {new_df[column_name].skew(numeric_only=True)}")
+    
+    def outliers(self):
+        def iqr_method(df):
+            stats = df.describe()
+            outlier_values = {}
+            for columnName in df.columns:
+                if columnName not in ["id", "member_id"] and columnName[-4:] != "skew":
+                    columnData = df[columnName]
+                    q1 = stats.loc['25%', columnName]
+                    q3 = stats.loc['75%', columnName]
+                    iqr = q3 - q1
+                    check1 = q1 - 1.5 * iqr
+                    check2 = q3 + 1.5 * iqr
+                    values = df[(df[columnName] < check1) | (df[columnName] > check2)][columnName].tolist()
+                    outlier_values[columnName] = values
+            return outlier_values
+
+        def zscore_method(df, threshold=3):
+            outlier_values = {}
+            for col in df.columns:
+                data = df[col]
+                zscores = np.abs((data - data.mean()) / data.std())
+                outlier_values[col] = data[zscores > threshold].tolist()
+            return outlier_values
+
+        def outlier_comparison(outlier_values_iqr, outlier_values_zscore):
+            true_outliers = {}
+            for col in outlier_values_iqr.keys():
+                iqr_outliers = set(outlier_values_iqr[col])
+                zscore_outliers = set(outlier_values_zscore[col])  # Get outliers for the column, default to an empty list
+                intersecting_outliers = list(iqr_outliers.intersection(zscore_outliers))
+                if intersecting_outliers:
+                    true_outliers[col] = intersecting_outliers
+            return true_outliers
+        
+        def reduce_outliers(df, outliers):
+            max_loss_percentage = 5
+            initial_outliers_count = sum(len(values) for values in outliers.values())
+            initial_data_length = len(df)
+            max_allowed_loss = initial_data_length * max_loss_percentage / 100.0
+            current_outliers_count = initial_outliers_count
+            current_data_length = initial_data_length
+            print('Initial data length:', initial_data_length)
+            print('Initial outliers count:', initial_outliers_count)
+            print('Max allowed loss:', max_allowed_loss)
+            sorted_outliers = [val for sublist in outliers.values() for val in sublist]
+            sorted_outliers.sort()
+            trimmed_outliers = sorted_outliers[:current_outliers_count]
+            data_loss = 0
+            while current_data_length - current_outliers_count > max_allowed_loss:
+                if data_loss >= max_allowed_loss:
+                    break
+                trimmed_outliers = trimmed_outliers[:int(len(trimmed_outliers) * 0.90)]  # Adjust trimming percentage 
+                data_loss = len(trimmed_outliers)
+                current_outliers_count = len(trimmed_outliers)
+                current_data_length = initial_data_length - current_outliers_count
+                print('Current data length:', current_data_length)
+                print('Current outliers count:', current_outliers_count)
+                print('Current data loss:', data_loss)
+            # Updated outliers after trimming
+            updated_outliers = {}
+            for col in outliers.keys():
+                updated_outliers[col] = [val for val in outliers[col] if val in trimmed_outliers]
+            return updated_outliers
+        
+        new_df = self.df.select_dtypes(include=['int64', 'float64'])
+        for col in new_df.columns:
+            drop_cols = []
+            if col[-4:] == "skew":
+                drop_cols.append(col)
+        new_df.drop(columns=drop_cols, inplace=True)
+        outlier_values_iqr = iqr_method(new_df)
+        outlier_values_zscore = zscore_method(new_df)
+        true_outliers = outlier_comparison(outlier_values_iqr, outlier_values_zscore)
+        return reduce_outliers(new_df,true_outliers)
+    
+    def remove_outliers(self, outliers):
+        for column in self.df.columns:
+            if column in outliers:
+                outlier_values = outliers[column]
+                self.df = self.df[~self.df[column].isin(outlier_values)]
+        return self.df
 
 def create_csv_file(df):
     df.to_csv('local_csv_file.csv')
@@ -185,5 +280,8 @@ test_dataframetransform = DataFrameTransform(test_transform.df)
 test_dataframetransform.drop_columns()
 test_dataframetransform.impute()
 test_dataframetransform.skew_data()
-graph3 = Plotter(test_dataframetransform.df)
-graph3.col_skew('annual_inc')
+outliers = test_dataframetransform.outliers()
+test_dataframetransform.remove_outliers(outliers)
+graph3 = Plotter(test_dataframetransform.remove_outliers(outliers))
+graph3.df.drop(columns=["id", "loan_amount", "funded_amount_inv","out_prncp_inv", "total_payment_inv","total_rec_prncp"], inplace=True)
+print(graph3.df)
