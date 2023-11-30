@@ -1,11 +1,12 @@
 from datetime import datetime as dt
-from matplotlib import pyplot as plt
 from scipy import stats
 from sqlalchemy import create_engine
 from statsmodels.graphics.gofplots import qqplot
+import matplotlib.pyplot as plt
 import missingno as msno
 import numpy as np
 import pandas as pd
+import seaborn as sns
 import yaml
 
 def read_crednetials():
@@ -39,9 +40,10 @@ class DataTransform:
         self.df = df
 
     def transform(self):
-        def month_year(column_name): # for "issue_date" and "earliest_credit_line" columns
-            self.df[column_name] = pd.to_datetime(self.df[column_name].apply(lambda x: dt.strptime(x, '%b-%Y')))
-
+        def month_year(column_name):  # Function to convert to datetime
+            self.df.loc[~self.df[column_name].isnull(), column_name] = pd.to_datetime(
+                self.df.loc[~self.df[column_name].isnull(), column_name].apply(lambda x: dt.strptime(x, '%b-%Y')),
+                errors='coerce')
         def make_float_int(column_name):
             self.df[column_name] = self.df[column_name].astype('int64')
 
@@ -52,15 +54,16 @@ class DataTransform:
         def xyears(column_name):
             # self.df[column_name] = self.df[column_name].apply(lambda x:x.split()[0])
             self.df[column_name] = self.df[column_name].str[:2]
-            self.df[column_name] = df[column_name].str.replace(' ', '')
-            self.df.loc[df[column_name] == "<", column_name] = "0"
+            self.df[column_name] = self.df[column_name].str.replace(' ', '')
+            self.df.loc[self.df[column_name] == "<", column_name] = "0"
             self.df[column_name] = self.df[column_name].astype('float64')
             self.df.rename(columns={column_name: column_name + " (years)"}, inplace=True)
 
-        month_year("issue_date")
-        month_year("earliest_credit_line")
-        xmonths("term")
-        xyears("employment_length")
+        month_year('issue_date')
+        month_year('earliest_credit_line')
+        month_year('next_payment_date')
+        xmonths('term')
+        xyears('employment_length')
 
 class DataFrameInfo:
     def __init__(self, df):
@@ -84,14 +87,14 @@ class DataFrameInfo:
     def null_count_percentage(self):
         null_count_percentage_lst = []
         for (columnName, columnData) in self.df.items():
-            null_count_percentage_lst.append((columnName, (df[columnName].isna().sum() / len(df.index)) * 100))
+            null_count_percentage_lst.append((columnName, (self.df[columnName].isna().sum() / len(self.df.index)) * 100))
         null_count_percentage_df = pd.DataFrame(null_count_percentage_lst, columns =['Column', 'Null_Count_Percentage'])
         return null_count_percentage_df
 
     def null_count(self):
         null_count_lst = []
         for (columnName, columnData) in self.df.items():
-            null_count_lst.append((columnName, df[columnName].isna().sum()))
+            null_count_lst.append((columnName, self.df[columnName].isna().sum()))
         null_count_df = pd.DataFrame(null_count_lst, columns =['Column', 'Null_Count'])
         return null_count_df
         
@@ -100,52 +103,80 @@ class Plotter:
         self.df = df
 
     def null_matrix(self):
-        msno.matrix(df)
+        msno.matrix(self.df)
     
     def null_bar(self):
-        msno.bar(df)
+        msno.bar(self.df)
 
     def col_skew(self, column_name):
         try:
             column_name_skew = column_name+"_skew"
-            df[column_name_skew].hist(bins=50)
-            print(f"Skew of {column_name} column is {df[column_name_skew].skew(numeric_only=True)}")
+            self.df[column_name_skew].hist(bins=50)
+            print(f"Skew of {column_name} column is {self.df[column_name_skew].skew(numeric_only=True)}")
         except:
-            df[column_name].hist(bins=50)
-            print(f"Skew of {column_name} column is {df[column_name].skew(numeric_only=True)}")
-
+            self.df[column_name].hist(bins=50)
+            print(f"Skew of {column_name} column is {self.df[column_name].skew(numeric_only=True)}")
 
     def qq_plot(self, column_name):
-        qq_plot = qqplot(df[column_name] , scale=1 ,line='q', fit=True)
+        qq_plot = qqplot(self.df[column_name] , scale=1 ,line='q', fit=True)
         plt.show()
 
     def iqr_visual(self, outlier_values):
         for column, values in outlier_values.items():
-            plt.figure(figsize=(8, 6)) 
-            plt.scatter(df.index, df[column], label='Data points', alpha=0.3) 
-            if values:  # Check if there are outliers for this column
-                plt.scatter(df.index[df[column].isin(values)], df[column][df[column].isin(values)],
-                        color='red', label='Outliers')
-            plt.xlabel('Index')  
-            plt.ylabel(column)   
-            plt.title(f"{column} Data with Outliers Highlighted")  
-            plt.legend() 
-            plt.show()
+            if column[-4:] != "skew":
+                plt.figure(figsize=(8, 6)) 
+                plt.scatter(self.df.index, self.df[column], label='Data points', alpha=0.3) 
+                if values:  # Check if there are outliers for this column
+                    plt.scatter(self.df.index[self.df[column].isin(values)], self.df[column][self.df[column].isin(values)],
+                            color='red', label='Outliers')
+                plt.xlabel('Index')  
+                plt.ylabel(column)   
+                plt.title(f"{column} Data with Outliers Highlighted")  
+                plt.legend() 
+                plt.show() 
 
+    def visual(self):
+        new_df = self.df.select_dtypes(include=['int64', 'float64'])
+        for column in new_df.columns:
+            if column[-4:] != "skew":
+                plt.figure(figsize=(8, 6)) 
+                plt.scatter(self.df.index, self.df[column], label='Data points', alpha=0.3) 
+                plt.xlabel('Index')  
+                plt.ylabel(column)   
+                plt.title(f"{column} Data with Outliers Highlighted")  
+                plt.legend() 
+                plt.show() 
+
+    def correlation_visual(self):
+        df = self.df.copy()
+        new_df = df.select_dtypes(include=['int64', 'float64'])
+        cols = []
+        for column in new_df.columns:
+            if column[-4:] == "skew":
+                cols.append(column)
+        new_df.drop(columns=cols, inplace=True)
+        correlation_matrix = new_df.corr()
+        # Create a heatmap using Seaborn
+        plt.figure(figsize=(16, 12))
+        sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', fmt='.2f')
+        plt.title('Correlation Matrix Heatmap')
+        plt.show()
+        
 class DataFrameTransform:
     def __init__(self, df):
         self.df = df
 
     def drop_columns(self):
         self.df.drop(columns=['mths_since_last_delinq', 'mths_since_last_record',
-                             'next_payment_date', 'mths_since_last_major_derog'], 
+                             'mths_since_last_major_derog'], 
                     inplace=True)
 
     def impute(self):
-        self.df['term (months)'] = df['term (months)'].fillna(df['term (months)'].median())
-        self.df['employment_length (years)'] = df['employment_length (years)'].fillna(df['employment_length (years)'].median())
-        self.df['funded_amount'] = df['funded_amount'].fillna(df['funded_amount'].mean())
-        self.df['int_rate'] = df['int_rate'].fillna(df['int_rate'].mean())
+        self.df['term (months)'] = self.df['term (months)'].fillna(self.df['term (months)'].median())
+        self.df['employment_length (years)'] = self.df['employment_length (years)'].fillna(self.df['employment_length (years)'].median())
+        self.df['funded_amount'] = self.df['funded_amount'].fillna(self.df['funded_amount'].mean())
+        self.df['int_rate'] = self.df['int_rate'].fillna(self.df['int_rate'].mean())
+        self.df['next_payment_date'] = self.df['next_payment_date'].fillna(self.df['next_payment_date'].mode().iloc[0])
         self.df.dropna(inplace=True)
     def null_count_percentage(self):
         null_count_percentage_lst = []
@@ -157,29 +188,29 @@ class DataFrameTransform:
     def null_count(self):
         null_count_lst = []
         for (columnName, columnData) in self.df.items():
-            null_count_lst.append((columnName, df[columnName].isna().sum()))
+            null_count_lst.append((columnName, self.df[columnName].isna().sum()))
         null_count_df = pd.DataFrame(null_count_lst, columns =['Column', 'Null_Count'])
         return null_count_df
 
     def skew_data(self):
         def skew_log(column_name):
-            df[column_name+"_skew"] = np.log(df[column_name])
+            self.df[column_name+"_skew"] = np.log(self.df[column_name])
 
         def skew_boxcox(column_name):
-            transformed_data, lambda_value = stats.boxcox(df[column_name])
-            df[column_name+"_skew"] = transformed_data
+            transformed_data, lambda_value = stats.boxcox(self.df[column_name])
+            self.df[column_name+"_skew"] = transformed_data
 
         def skew_yeojohnson(column_name):
-            transformed_data, lambda_value = stats.yeojohnson(df[column_name])
+            transformed_data, lambda_value = stats.yeojohnson(self.df[column_name])
             return transformed_data
 
-        new_df = df.select_dtypes(include=['int64', 'float64'])
+        new_df = self.df.select_dtypes(include=['int64', 'float64'])
         for col in new_df.columns:
             if col in ["id", "member_id"]:
                 continue
             else:
                 column_name = str(col)+"_skew"
-                df[column_name] = skew_yeojohnson(col)
+                self.df[column_name] = skew_yeojohnson(col)
                 # print(f"Skew of {col} column is {new_df[column_name].skew(numeric_only=True)}")
     
     def outliers(self):
@@ -187,7 +218,7 @@ class DataFrameTransform:
             stats = df.describe()
             outlier_values = {}
             for columnName in df.columns:
-                if columnName not in ["id", "member_id"] and columnName[-4:] != "skew":
+                if columnName not in ["id", "member_id"]:
                     columnData = df[columnName]
                     q1 = stats.loc['25%', columnName]
                     q3 = stats.loc['75%', columnName]
@@ -208,12 +239,15 @@ class DataFrameTransform:
 
         def outlier_comparison(outlier_values_iqr, outlier_values_zscore):
             true_outliers = {}
+            number_of_values = 0
             for col in outlier_values_iqr.keys():
                 iqr_outliers = set(outlier_values_iqr[col])
                 zscore_outliers = set(outlier_values_zscore[col])  # Get outliers for the column, default to an empty list
                 intersecting_outliers = list(iqr_outliers.intersection(zscore_outliers))
+                number_of_values += len(intersecting_outliers)
                 if intersecting_outliers:
                     true_outliers[col] = intersecting_outliers
+            # print(number_of_values)
             return true_outliers
         
         def reduce_outliers(df, outliers):
@@ -233,7 +267,7 @@ class DataFrameTransform:
             while current_data_length - current_outliers_count > max_allowed_loss:
                 if data_loss >= max_allowed_loss:
                     break
-                trimmed_outliers = trimmed_outliers[:int(len(trimmed_outliers) * 0.90)]  # Adjust trimming percentage 
+                trimmed_outliers = trimmed_outliers[:int(len(trimmed_outliers) * 0.95)]  # Adjust trimming percentage 
                 data_loss = len(trimmed_outliers)
                 current_outliers_count = len(trimmed_outliers)
                 current_data_length = initial_data_length - current_outliers_count
@@ -246,7 +280,8 @@ class DataFrameTransform:
                 updated_outliers[col] = [val for val in outliers[col] if val in trimmed_outliers]
             return updated_outliers
         
-        new_df = self.df.select_dtypes(include=['int64', 'float64'])
+        
+        new_df = self.df.copy().select_dtypes(include=['int64', 'float64'])
         for col in new_df.columns:
             drop_cols = []
             if col[-4:] == "skew":
@@ -258,12 +293,13 @@ class DataFrameTransform:
         return reduce_outliers(new_df,true_outliers)
     
     def remove_outliers(self, outliers):
+        # df = self.df.copy()
         for column in self.df.columns:
             if column in outliers:
                 outlier_values = outliers[column]
                 self.df = self.df[~self.df[column].isin(outlier_values)]
         return self.df
-
+    
 def create_csv_file(df):
     df.to_csv('local_csv_file.csv')
 
